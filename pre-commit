@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+"""
+Pre-commit hook to ensure code quality before committing.
+
+Install with:
+  cp hooks/pre-commit .git/hooks/pre-commit
+  chmod +x .git/hooks/pre-commit
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+
+# Project root
+ROOT = Path(__file__).parent.parent
+
+# Files to check
+PYTHON_FILES = [
+    "app.py",
+    "main.py",
+    "ird_api.py",
+    "ocr.py",
+]
+
+def run_command(cmd, description):
+    """Run a command and report results."""
+    print(f"\n🔍 {description}...")
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode != 0:
+            print(f"❌ {description} failed:")
+            print(result.stdout)
+            print(result.stderr)
+            return False
+        else:
+            print(f"✅ {description} passed")
+            return True
+    except FileNotFoundError:
+        print(f"⚠️  {description} not installed, skipping...")
+        return True
+    except Exception as e:
+        print(f"❌ Error running {description}: {e}")
+        return False
+
+
+def main():
+    """Run all pre-commit checks."""
+    print("=" * 60)
+    print("PRE-COMMIT CHECKS")
+    print("=" * 60)
+    
+    all_passed = True
+    
+    # 1. Format check with Black
+    all_passed &= run_command(
+        ["black", "--check", "--quiet"] + PYTHON_FILES,
+        "Code formatting (black)"
+    )
+    
+    # 2. Lint with Flake8
+    all_passed &= run_command(
+        ["flake8"] + PYTHON_FILES,
+        "Linting (flake8)"
+    )
+    
+    # 3. Type checking with mypy
+    all_passed &= run_command(
+        ["mypy"] + PYTHON_FILES,
+        "Type checking (mypy)"
+    )
+    
+    # 4. Security check with bandit
+    all_passed &= run_command(
+        ["bandit", "-ll", "-q"] + PYTHON_FILES,
+        "Security check (bandit)"
+    )
+    
+    # 5. Run tests
+    all_passed &= run_command(
+        ["pytest", "tests/", "-q"],
+        "Unit tests (pytest)"
+    )
+    
+    print("\n" + "=" * 60)
+    if all_passed:
+        print("✅ ALL CHECKS PASSED - Ready to commit!")
+        print("=" * 60)
+        sys.exit(0)
+    else:
+        print("❌ SOME CHECKS FAILED - Please fix errors before committing")
+        print("=" * 60)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

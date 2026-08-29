@@ -1,0 +1,16 @@
+# Core Dependencies
+streamlit>=1.28.0
+pillow>=11.0.0
+pandas>=1.5.0
+requests>=2.32.0
+
+# OCR & Image Processing
+easyocr>=1.7.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Utilities
+python-dateutil>=2.8.0
+
+# Note: torch is a heavy dependency (>500MB) and is typically auto-installed with easyocr
+# If you need to minimize size, consider using a GPU-enabled environment or a smaller OCR alternative

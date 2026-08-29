@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  ird-checker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: ird-prize-checker
+    
+    ports:
+      - "8501:8501"
+    
+    environment:
+      - API_TIMEOUT=10
+      - CACHE_TTL=3600
+      - LOG_LEVEL=INFO
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
+    
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+      # Mount screenshots directory
+      - ./screenshots:/app/screenshots
+    
+    restart: unless-stopped
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  screenshots:
+  logs:
