@@ -397,4 +397,4 @@ A: Currently web-only. The mobile browser version works great!
 
 ---
 
-**Made with ❤️ for prize winners everywhere**
+**I hope you will find this tool useful**
