@@ -1,4 +1,3 @@
-# System dependencies for FFmpeg and image processing libraries
 ffmpeg
 libsm6
 libxext6
