@@ -397,20 +397,4 @@ A: Currently web-only. The mobile browser version works great!
 
 ---
 
-## 🎉 Changelog
-
-### Version 1.1.0 (Current)
-- ✅ Fixed missing dependencies
-- ✅ Improved error handling
-- ✅ Added type hints throughout
-- ✅ Implemented directory scanning
-- ✅ Enhanced datetime parsing
-- ✅ Added comprehensive logging
-- ✅ Full docstring documentation
-
-### Version 1.0.0
-- Initial release
-
----
-
 **Made with ❤️ for prize winners everywhere**
