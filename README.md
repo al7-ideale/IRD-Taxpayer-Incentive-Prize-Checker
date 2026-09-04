@@ -1,4 +1,3 @@
-```markdown
 # IRD Taxpayer Incentive Prize Checker
 
 Extract coupon codes from payment screenshots using OCR and check them against official IRD winning lists.
@@ -74,7 +73,3 @@ docker run -p 8501:8501 ird-checker
 ## License
 
 Distributed as-is for IRD prize verification.
-
-```
-
-```
