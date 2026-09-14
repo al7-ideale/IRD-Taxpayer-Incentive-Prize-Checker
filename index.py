@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path
-from dateutil import parser as date_parser
-import gc
+from datetime import datetime
+from pydantic import BaseModel
+from typing import List
 
 from ird_api import fetch_winners
-from ocr import extract_coupons_from_image, MAX_IMAGE_DIMENSION
 
 app = FastAPI(title="IRD Prize Winner Checker")
 
@@ -44,60 +44,43 @@ async def read_root():
     return HTMLResponse(content=TEMPLATE_PATH.read_text(encoding="utf-8"))
 
 
+class CheckRequest(BaseModel):
+    coupons: List[str]
+
+
 @app.post("/api/check")
-async def check_prizes(
-    manual_input: str = Form(""),
-    images: list[UploadFile] = File([])
-):
+async def check_prizes(req: CheckRequest):
+    """
+    Receives a list of parsed coupons from the frontend, checks them against the IRD database.
+    """
+    # 1. Get the current winning draw dictionary
     winning_dict = get_winners()
-    if winning_dict is None:
+    
+    if not winning_dict:
         raise HTTPException(status_code=500, detail="Cannot process: IRD winners data is unavailable.")
 
-    ocr_coupons = []
-    
-    # Process uploaded images
-    for image in images:
-        if not image.filename:
-            continue
-            
-        try:
-            image_bytes = await image.read()
-            if len(image_bytes) > 0:
-                extracted = extract_coupons_from_image(image_bytes)
-                ocr_coupons.extend(extracted)
-        except Exception as exc:
-            print(f"Error reading {image.filename}: {exc}")
-        finally:
-            gc.collect()
-            
-    # Process manual inputs
-    manual_coupons = []
-    if manual_input.strip():
-        raw_tokens = manual_input.replace(",", " ").split()
-        for token in raw_tokens:
-            clean_token = "".join(filter(str.isdigit, token))
-            if len(clean_token) == MAX_COUPON_LENGTH:
-                manual_coupons.append(clean_token)
-
-    # Deduplicate across all sources
-    all_coupons = list(dict.fromkeys(ocr_coupons + manual_coupons))
+    # Deduplicate coupons
+    all_coupons = list(dict.fromkeys(req.coupons))
     
     results = []
     winners_count = 0
-
+    
+    # Check each unique coupon against the winning dictionary
     for coupon in all_coupons:
         if coupon in winning_dict:
             info = winning_dict[coupon]
-            raw_deadline = info.get("claim_deadline")
             
-            formatted_deadline = "N/A"
-            if raw_deadline:
+            # Extract and format the claim deadline
+            deadline_str = info.get("claim_deadline", "N/A")
+            formatted_deadline = deadline_str
+            if deadline_str != "N/A" and "T" in deadline_str:
+                date_part = deadline_str.split("T")[0]
                 try:
-                    dt = date_parser.parse(raw_deadline)
-                    formatted_deadline = dt.strftime("%d %b %Y, %I:%M %p")
-                except (ValueError, TypeError):
-                    formatted_deadline = str(raw_deadline)
-
+                    dt = datetime.strptime(date_part, "%Y-%m-%d")
+                    formatted_deadline = dt.strftime("%B %d, %Y")
+                except Exception:
+                    pass
+            
             results.append({
                 "Result": "WINNER",
                 "Coupon Code": coupon,
@@ -118,7 +101,5 @@ async def check_prizes(
     return JSONResponse({
         "total_checked": len(all_coupons),
         "winners_count": winners_count,
-        "ocr_scanned": len(ocr_coupons),
         "results": results
     })
-
