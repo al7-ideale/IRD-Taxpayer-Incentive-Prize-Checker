@@ -3,12 +3,10 @@ import re
 import warnings
 from pathlib import Path
 from typing import Union, List
+import base64
 
-import cv2
-import easyocr
-import numpy as np
+import requests
 from PIL import Image
-import streamlit as st
 
 warnings.filterwarnings("ignore")
 
@@ -33,39 +31,17 @@ OCR_CHAR_MAP = {
     "B": "8",
 }
 
-
-@st.cache_resource
-def get_ocr_reader():
-    """Initializes and caches the EasyOCR reader instance."""
-    with st.spinner("Loading OCR model (first run only, please wait)..."):
-        return easyocr.Reader(["en"], gpu=False, verbose=False)
+# Free API key for OCR.space - user can override via environment variable if needed
+OCR_SPACE_API_KEY = "helloworld"
 
 
 def normalize_ocr_digits(text: str) -> str:
-    """
-    Fixes common OCR character misreadings where digits are read as letters.
-    
-    Args:
-        text: Raw OCR text containing potential misreadings
-        
-    Returns:
-        Text with common OCR errors corrected
-    """
+    """Fixes common OCR character misreadings where digits are read as letters."""
     return "".join(OCR_CHAR_MAP.get(char, char) for char in text)
 
 
 def is_similar(code1: str, code2: str, max_diff: int = 2) -> bool:
-    """
-    Detects near-duplicate codes caused by single-digit OCR misreads.
-    
-    Args:
-        code1: First coupon code
-        code2: Second coupon code
-        max_diff: Maximum number of differing digits to consider similar
-        
-    Returns:
-        True if codes are similar (potential duplicates)
-    """
+    """Detects near-duplicate codes caused by single-digit OCR misreads."""
     if len(code1) != len(code2):
         return False
     diff_count = sum(1 for a, b in zip(code1, code2) if a != b)
@@ -76,12 +52,6 @@ def deduplicate_near_matches(coupons: List[str]) -> List[str]:
     """
     Collapses near-duplicate OCR readings into the most accurate candidate.
     Prioritizes codes starting with "0" as they are more reliable.
-    
-    Args:
-        coupons: List of coupon codes potentially containing duplicates
-        
-    Returns:
-        Deduplicated list of coupon codes
     """
     clean_coupons: List[str] = []
     
@@ -89,7 +59,6 @@ def deduplicate_near_matches(coupons: List[str]) -> List[str]:
         duplicate = False
         for i, existing in enumerate(clean_coupons):
             if is_similar(coupon, existing):
-                # Prefer codes starting with "0" (more reliable OCR)
                 if coupon.startswith("0") and not existing.startswith("0"):
                     clean_coupons[i] = coupon
                 duplicate = True
@@ -104,21 +73,9 @@ def deduplicate_near_matches(coupons: List[str]) -> List[str]:
 def preprocess_and_downscale(
     image_input: Union[Path, str, Image.Image, bytes],
     max_dim: int = MAX_IMAGE_DIMENSION
-) -> np.ndarray:
+) -> bytes:
     """
-    Converts image to grayscale and downscales to prevent memory issues.
-    Downscaling prevents Out-Of-Memory errors on Streamlit Cloud.
-    
-    Args:
-        image_input: Image as file path, PIL Image, or bytes
-        max_dim: Maximum dimension to downscale to
-        
-    Returns:
-        Grayscale numpy array ready for OCR
-        
-    Raises:
-        ValueError: If image input type is unsupported
-        IOError: If image file cannot be read
+    Downscales image to prevent memory/payload issues and returns as JPEG bytes.
     """
     try:
         if isinstance(image_input, (str, Path)):
@@ -141,7 +98,10 @@ def preprocess_and_downscale(
                 new_h, new_w = max_dim, int(width * (max_dim / height))
             img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+        # Convert back to bytes for API payload
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='JPEG', quality=85)
+        return img_byte_arr.getvalue()
     
     except IOError as e:
         raise IOError(f"Failed to read image: {str(e)}")
@@ -149,82 +109,79 @@ def preprocess_and_downscale(
         raise Exception(f"Error preprocessing image: {str(e)}")
 
 
+def _call_ocr_space_api(image_bytes: bytes) -> str:
+    """Calls the OCR.space API and returns the parsed text."""
+    b64_image = base64.b64encode(image_bytes).decode('utf-8')
+    payload = {
+        'base64Image': f'data:image/jpeg;base64,{b64_image}',
+        'apikey': OCR_SPACE_API_KEY,
+        'language': 'eng',
+        'isOverlayRequired': False
+    }
+    
+    try:
+        response = requests.post(
+            'https://api.ocr.space/parse/image',
+            data=payload,
+            timeout=15
+        )
+        response.raise_for_status()
+        result = response.json()
+        
+        if result.get('IsErroredOnProcessing'):
+            print(f"OCR API Error: {result.get('ErrorMessage')}")
+            return ""
+            
+        parsed_results = result.get('ParsedResults', [])
+        if not parsed_results:
+            return ""
+            
+        return parsed_results[0].get('ParsedText', '')
+    except Exception as e:
+        print(f"OCR Request failed: {e}")
+        return ""
+
+
 def extract_coupons_from_image(image_input: Union[Path, str, Image.Image, bytes]) -> List[str]:
     """
-    Uses EasyOCR on downscaled images to safely extract 12-digit coupon codes.
-    
-    Args:
-        image_input: Image as file path, PIL Image, or bytes
-        
-    Returns:
-        List of extracted and deduplicated 12-digit coupon codes
+    Uses OCR.space API on downscaled images to safely extract 12-digit coupon codes.
     """
     try:
-        reader = get_ocr_reader()
-        processed_img = preprocess_and_downscale(image_input)
-        results = reader.readtext(processed_img, detail=0)
+        processed_img_bytes = preprocess_and_downscale(image_input)
+        raw_text = _call_ocr_space_api(processed_img_bytes)
     except Exception as e:
-        st.error(f"OCR processing failed: {str(e)}")
+        print(f"OCR processing failed: {str(e)}")
         return []
 
     found_coupons: List[str] = []
 
-    for item in results:
-        if not isinstance(item, str):
-            continue
-            
-        # Method 1: Direct regex match for 12-digit patterns
-        matches = re.findall(COUPON_PATTERN, item)
-        found_coupons.extend(matches)
+    # Method 1: Direct regex match for 12-digit patterns
+    matches = re.findall(COUPON_PATTERN, raw_text)
+    found_coupons.extend(matches)
 
-        # Method 2: Check individual words for potential OCR-garbled coupons
-        words = item.split()
-        for word in words:
-            # Remove special characters but keep digits and letters
-            cleaned_word = re.sub(r"[^\w]", "", word)
-            
-            # Only process if it looks like a 12-character code
-            if len(cleaned_word) == COUPON_LENGTH:
-                # Normalize common OCR misreadings
-                normalized = normalize_ocr_digits(cleaned_word)
-                
-                # Only add if result is all digits
-                if normalized.isdigit():
-                    found_coupons.append(normalized)
+    # Method 2: Check individual words for potential OCR-garbled coupons
+    words = raw_text.split()
+    for word in words:
+        cleaned_word = re.sub(r"[^\w]", "", word)
+        if len(cleaned_word) == COUPON_LENGTH:
+            normalized = normalize_ocr_digits(cleaned_word)
+            if normalized.isdigit():
+                found_coupons.append(normalized)
 
-    # Remove exact duplicates while preserving order
     unique_matches = list(dict.fromkeys(found_coupons))
-    
-    # Handle near-duplicates caused by single-digit OCR errors
     return deduplicate_near_matches(unique_matches)
 
 
 def extract_coupons_from_directory(directory: Path) -> List[str]:
-    """
-    Recursively extracts coupons from all image files in a directory.
-    
-    Args:
-        directory: Path to directory containing image files
-        
-    Returns:
-        Deduplicated list of all extracted coupon codes
-    """
+    """Recursively extracts coupons from all image files in a directory."""
     if not isinstance(directory, Path):
         directory = Path(directory)
     
-    if not directory.exists():
-        raise ValueError(f"Directory does not exist: {directory}")
-    
-    if not directory.is_dir():
-        raise ValueError(f"Path is not a directory: {directory}")
+    if not directory.exists() or not directory.is_dir():
+        raise ValueError(f"Invalid directory: {directory}")
     
     all_coupons: List[str] = []
-    
-    # Recursively find all image files
-    image_files = [
-        f for f in directory.rglob('*')
-        if f.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
-    ]
+    image_files = [f for f in directory.rglob('*') if f.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS]
     
     for image_file in image_files:
         try:
@@ -234,5 +191,4 @@ def extract_coupons_from_directory(directory: Path) -> List[str]:
             print(f"⚠️  Error processing {image_file.name}: {str(e)}")
             continue
     
-    # Deduplicate across all files
     return list(dict.fromkeys(all_coupons))

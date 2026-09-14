@@ -95,3 +95,6 @@ docker-compose.override.yml
 *.pickle
 model_weights/
 cache/
+
+# Vercel
+.vercel/
