@@ -1,6 +1,0 @@
-ffmpeg
-libsm6
-libxext6
-zlib1g-dev
-libjpeg-dev
-libopencv-dev
