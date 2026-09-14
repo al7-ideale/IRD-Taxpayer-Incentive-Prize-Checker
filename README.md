@@ -1,13 +1,15 @@
 # IRD Taxpayer Incentive Prize Checker
 
-Extract coupon codes from payment screenshots using OCR and check them against official IRD winning lists.
+**Live Demo:** [https://prize.aadarshdhami.com.np/](https://prize.aadarshdhami.com.np/)
+
+Extract 12-digit coupon codes from eSewa/Khalti payment screenshots entirely in your browser, and instantly check them against the official IRD winning lists.
 
 ## Features
 
 - **Vercel Ready**: A lightweight FastAPI backend that easily deploys to Vercel's Serverless environment.
-- **Client-Side OCR**: Automatic 12-digit code detection from screenshots using browser-based Tesseract.js (no backend overhead or rate limits).
-- **Instant Validation**: Real-time cross-referencing with official IRD draw database.
-- **Modern UI**: Clean HTML/JS frontend styled with TailwindCSS.
+- **Client-Side OCR**: Automatic 12-digit code detection from screenshots using browser-based Tesseract.js (no backend overhead, 100% free, zero rate limits).
+- **Instant Validation**: Real-time cross-referencing with the official IRD draw database.
+- **Modern UI**: Clean HTML/JS frontend styled with TailwindCSS, featuring drag-and-drop uploads and instant result filtering.
 
 ## Requirements
 
@@ -38,10 +40,9 @@ Vercel will use the provided `vercel.json` and `index.py` to host the FastAPI ap
 
 ```text
 .
-├── index.py           # FastAPI application (Entrypoint)
+├── index.py           # FastAPI application (Backend Entrypoint)
 ├── templates/         # HTML/JS Frontend UI (TailwindCSS & Tesseract.js)
-├── main.py            # Command line application
-├── ird_api.py         # IRD API client
+├── ird_api.py         # IRD API client (Winner validation)
 ├── vercel.json        # Vercel deployment configuration
 └── requirements.txt   # Python package dependencies
 ```
